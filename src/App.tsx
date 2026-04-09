@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Building2, 
@@ -28,6 +28,7 @@ import {
   onSnapshot,
   doc,
   setDoc,
+  addDoc,
   getDoc,
   query,
   where,
@@ -138,6 +139,7 @@ export default function App() {
   const [analyses, setAnalyses] = useState<DealAnalysis[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<DealAnalysis | null>(null);
+  const hasSeeded = useRef(false);
 
   // AI Setup
   const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' }), []);
@@ -187,63 +189,69 @@ export default function App() {
       setAnalyses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DealAnalysis)));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'deals'));
 
-    // Seed initial data if empty
-    const seedData = async () => {
-      if (properties.length === 0 && user.role === 'admin') {
-        const initialProps: Property[] = [
-          {
-            id: 'prop_1',
-            address: '123 Ocean Drive, Miami, FL',
-            price: 1250000,
-            bedrooms: 4,
-            bathrooms: 3,
-            sqft: 2800,
-            status: 'active',
-            imageUrl: 'https://picsum.photos/seed/miami/800/600',
-            ownerUid: user.uid,
-            createdAt: new Date()
-          },
-          {
-            id: 'prop_2',
-            address: '456 Mountain View, Aspen, CO',
-            price: 2400000,
-            bedrooms: 5,
-            bathrooms: 4.5,
-            sqft: 4200,
-            status: 'active',
-            imageUrl: 'https://picsum.photos/seed/aspen/800/600',
-            ownerUid: user.uid,
-            createdAt: new Date()
-          },
-          {
-            id: 'prop_3',
-            address: '789 Skyline Blvd, New York, NY',
-            price: 3100000,
-            bedrooms: 3,
-            bathrooms: 3,
-            sqft: 2100,
-            status: 'pending',
-            imageUrl: 'https://picsum.photos/seed/nyc/800/600',
-            ownerUid: user.uid,
-            createdAt: new Date()
-          }
-        ];
-
-        for (const p of initialProps) {
-          await setDoc(doc(db, 'properties', p.id), p);
-        }
-      }
-    };
-    
-    if (properties.length === 0) {
-      seedData();
-    }
-
     return () => {
       unsubProps();
       unsubDeals();
     };
   }, [user]);
+
+  // Seed initial data if empty
+  useEffect(() => {
+    if (!user || user.role !== 'admin' || hasSeeded.current || properties.length > 0) return;
+
+    const seedData = async () => {
+      hasSeeded.current = true;
+      console.log("Seeding initial properties...");
+      const initialProps: Property[] = [
+        {
+          id: 'prop_1',
+          address: '123 Ocean Drive, Miami, FL',
+          price: 1250000,
+          bedrooms: 4,
+          bathrooms: 3,
+          sqft: 2800,
+          status: 'active',
+          imageUrl: 'https://picsum.photos/seed/miami/800/600',
+          ownerUid: user.uid,
+          createdAt: new Date()
+        },
+        {
+          id: 'prop_2',
+          address: '456 Mountain View, Aspen, CO',
+          price: 2400000,
+          bedrooms: 5,
+          bathrooms: 4.5,
+          sqft: 4200,
+          status: 'active',
+          imageUrl: 'https://picsum.photos/seed/aspen/800/600',
+          ownerUid: user.uid,
+          createdAt: new Date()
+        },
+        {
+          id: 'prop_3',
+          address: '789 Skyline Blvd, New York, NY',
+          price: 3100000,
+          bedrooms: 3,
+          bathrooms: 3,
+          sqft: 2100,
+          status: 'pending',
+          imageUrl: 'https://picsum.photos/seed/nyc/800/600',
+          ownerUid: user.uid,
+          createdAt: new Date()
+        }
+      ];
+
+      for (const p of initialProps) {
+        try {
+          await setDoc(doc(db, 'properties', p.id), p);
+        } catch (error) {
+          console.error(`Failed to seed property ${p.id}:`, error);
+        }
+      }
+    };
+
+    seedData();
+  }, [user, properties.length]);
 
   const handleLogin = async () => {
     try {
@@ -295,16 +303,19 @@ export default function App() {
       });
 
       const result = JSON.parse(response.text);
-      const dealId = `deal_${Date.now()}`;
-      const newDeal: DealAnalysis = {
-        id: dealId,
+      const newDealData = {
         propertyId: property.id,
         userUid: user.uid,
         ...result,
         createdAt: new Date()
       };
 
-      await setDoc(doc(db, 'deals', dealId), newDeal);
+      const docRef = await addDoc(collection(db, 'deals'), newDealData);
+      const newDeal: DealAnalysis = {
+        id: docRef.id,
+        ...newDealData
+      };
+
       setAnalysisResult(newDeal);
       setActiveTab('analysis');
     } catch (error) {
@@ -421,7 +432,10 @@ export default function App() {
             <button className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-xl transition-colors">
               <Filter size={20} />
             </button>
-            <button className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-zinc-800 transition-all shadow-md active:scale-95">
+            <button 
+              onClick={() => setActiveTab('properties')}
+              className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-zinc-800 transition-all shadow-md active:scale-95"
+            >
               <Plus size={18} />
               New Deal
             </button>
@@ -566,6 +580,16 @@ export default function App() {
                   </div>
                 ))}
                 
+                {properties.length === 0 && (
+                  <div className="col-span-full py-20 bg-white rounded-2xl border border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
+                    <Building2 className="text-zinc-200 mb-4" size={48} />
+                    <h3 className="text-lg font-bold text-zinc-900 mb-1">No properties found</h3>
+                    <p className="text-zinc-500 text-sm max-w-xs">
+                      Your property portfolio is currently empty. Add your first property to start analyzing deals.
+                    </p>
+                  </div>
+                )}
+                
                 {/* Mock Add Property Card */}
                 <button className="border-2 border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center p-8 text-zinc-400 hover:border-zinc-900 hover:text-zinc-900 transition-all group">
                   <div className="w-12 h-12 rounded-full bg-zinc-50 flex items-center justify-center mb-4 group-hover:bg-zinc-900 group-hover:text-white transition-all">
@@ -657,6 +681,70 @@ export default function App() {
                     </button>
                   </div>
                 )}
+              </motion.div>
+            )}
+            {activeTab === 'settings' && (
+              <motion.div 
+                key="settings"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-2xl mx-auto"
+              >
+                <div className="bg-white rounded-3xl border border-zinc-100 shadow-sm overflow-hidden">
+                  <div className="h-32 bg-zinc-900 relative">
+                    <div className="absolute -bottom-12 left-8">
+                      <img 
+                        src={user.photoURL} 
+                        className="w-24 h-24 rounded-3xl border-4 border-white shadow-lg" 
+                        alt="Profile" 
+                      />
+                    </div>
+                  </div>
+                  <div className="pt-16 pb-8 px-8">
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-bold text-zinc-900">{user.displayName}</h3>
+                      <p className="text-zinc-500">{user.email}</p>
+                      <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800 capitalize">
+                        {user.role} Account
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl">
+                        <div>
+                          <p className="font-semibold text-zinc-900">Email Notifications</p>
+                          <p className="text-xs text-zinc-500">Receive weekly market reports</p>
+                        </div>
+                        <div className="w-12 h-6 bg-zinc-900 rounded-full relative cursor-pointer">
+                          <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl">
+                        <div>
+                          <p className="font-semibold text-zinc-900">AI Analysis Depth</p>
+                          <p className="text-xs text-zinc-500">Balance speed and detail</p>
+                        </div>
+                        <select className="bg-white border-none rounded-lg text-sm font-medium focus:ring-2 focus:ring-zinc-900">
+                          <option>Standard</option>
+                          <option>Deep Dive</option>
+                          <option>Executive</option>
+                        </select>
+                      </div>
+
+                      <div className="pt-6 border-t border-zinc-100">
+                        <button 
+                          onClick={handleLogout}
+                          className="w-full py-3 rounded-xl border-2 border-rose-100 text-rose-500 font-semibold hover:bg-rose-50 transition-all flex items-center justify-center gap-2"
+                        >
+                          <LogOut size={18} />
+                          Sign Out of All Devices
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

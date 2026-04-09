@@ -4,6 +4,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 async function startServer() {
   const app = express();
