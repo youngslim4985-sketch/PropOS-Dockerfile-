@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user profile information and roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier from Firebase Auth" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["admin", "agent", "client"], "description": "User's access level" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Real estate property details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "address": { "type": "string" },
+        "price": { "type": "number" },
+        "bedrooms": { "type": "integer" },
+        "bathrooms": { "type": "number" },
+        "sqft": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "pending", "sold"] },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "ownerUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["address", "price", "status"]
+    },
+    "DealAnalysis": {
+      "title": "Deal Analysis",
+      "description": "AI-powered analysis of a property deal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "propertyId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "score": { "type": "number", "description": "Investment score from 0-100" },
+        "summary": { "type": "string" },
+        "pros": { "type": "array", "items": { "type": "string" } },
+        "cons": { "type": "array", "items": { "type": "string" } },
+        "roi": { "type": "number", "description": "Estimated Return on Investment" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["propertyId", "userUid", "score"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/properties/{propertyId}": {
+      "schema": "Property",
+      "description": "Property listings"
+    },
+    "/deals/{dealId}": {
+      "schema": "DealAnalysis",
+      "description": "Deal analyses"
+    }
+  }
+}

@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional, url format)
+    //   - role: string (required, enum: admin, agent, client)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: properties
+    // Document ID: {propertyId}
+    // Fields:
+    //   - address: string (required)
+    //   - price: number (required, positive)
+    //   - bedrooms: number
+    //   - bathrooms: number
+    //   - sqft: number
+    //   - status: string (enum: active, pending, sold)
+    //   - imageUrl: string (url format)
+    //   - ownerUid: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: deals
+    // Document ID: {dealId}
+    // Fields:
+    //   - propertyId: string (required)
+    //   - userUid: string (required)
+    //   - score: number (0-100)
+    //   - summary: string
+    //   - pros: list of strings
+    //   - cons: list of strings
+    //   - roi: number
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "youngslim4985@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'agent', 'client'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidProperty(data) {
+      return data.keys().hasAll(['address', 'price', 'status', 'ownerUid', 'createdAt']) &&
+             data.address is string && data.address.size() > 0 && data.address.size() < 500 &&
+             data.price is number && data.price > 0 &&
+             data.status in ['active', 'pending', 'sold'] &&
+             data.ownerUid is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidDeal(data) {
+      return data.keys().hasAll(['propertyId', 'userUid', 'score', 'createdAt']) &&
+             data.propertyId is string &&
+             data.userUid == request.auth.uid &&
+             data.score is number && data.score >= 0 && data.score <= 100 &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role == 'client') || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /properties/{propertyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidProperty(request.resource.data) && 
+                    (request.resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidProperty(request.resource.data) && 
+                    (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /deals/{dealId} {
+      allow read: if isAuthenticated() && (resource.data.userUid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidDeal(request.resource.data);
+      allow update: if isAuthenticated() && isValidDeal(request.resource.data) && 
+                    (resource.data.userUid == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+  }
+}
